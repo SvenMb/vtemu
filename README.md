@@ -2,7 +2,7 @@
 VT100 terminal class for Ardiuno_GFX
 
 **work in progress!!***
-* curerently no escape codes implemented
+* currently no escape codes implemented
 * using bitmapped canvas for scrolling etc., don"t know if I change to text map 
 * cursor removed, need to reimplement
 
