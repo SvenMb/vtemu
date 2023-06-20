@@ -47,6 +47,7 @@ Arduino_GFX *gfx = new Arduino_ST7789(
 
 #include "vtemu/terminal.cpp"
 
+Terminal * vt = new Terminal();
 
 // USB Host Part (handles detection and input from the physical keyboard)
 #define DP_P0  15  // USB Host Data+ Pin (must be an analog pin)
@@ -60,38 +61,64 @@ Arduino_GFX *gfx = new Arduino_ST7789(
 #include "USBHIDKeyboard.h" // Keyboard
 USBHIDKeyboard Keyboard;
 
-char keyasc;
-int keycode;
-boolean iskeypressed;
-
-Terminal * vt = new Terminal();
-
-
-
 class KeyboardInput : public KeyboardReportParser
 {
  protected:
     void OnKeyDown  (uint8_t mod, uint8_t key);
-    void OnKeyPressed(uint8_t key);
 };
 
-void KeyboardInput::OnKeyDown(uint8_t mod, uint8_t key)
-{
-  uint8_t c = OemToAscii(mod, key);
-  if (c)
-    OnKeyPressed(c);
-  //else
-  //vt->printf("\r\nmod %02x, key %02x\r\n",mod,key);
-};
+void KeyboardInput::OnKeyDown(uint8_t mod, uint8_t key) {
+         uint8_t ctrl = (mod & 0x11);
+         uint8_t shift = (mod & 0x22);
+  
+         // [a-z]
+         if (VALUE_WITHIN(key, 0x04, 0x1d)) {
+                 if (ctrl) {
+                  Serial.write(key - 3);
+                  return; 
+                 // Upper case letters
+                 } else if ((kbdLockingKeys.kbdLeds.bmCapsLock == 0 && shift) ||
+                         (kbdLockingKeys.kbdLeds.bmCapsLock == 1 && shift == 0)) {
+                         Serial.write(key - 4 + 'A');
+                         return;
 
-void KeyboardInput::OnKeyPressed(uint8_t key) {
-  keyasc = (char) key;
-  // keycode = (int)key;
-  // iskeypressed = true;
-  if (keyasc == 0x0d) vt->write(0x0a);
-  // vt->write(keyasc);
-  Serial.write(keyasc);
-};
+                         // Lower case letters
+                 } else {
+                         Serial.write(key - 4 + 'a');
+                         return;
+                 }
+         }
+         // Numbers
+         else if (VALUE_WITHIN(key, 0x1e, 0x27)) {
+                 if (shift) {
+                         Serial.write((uint8_t)pgm_read_byte(&getNumKeys()[key - 0x1e]));
+                         return;
+                 } else {
+                         Serial.write((key == UHS_HID_BOOT_KEY_ZERO) ? '0' : key - 0x1e + '1');
+                         return;
+                 }
+         }// Keypad Numbers
+         else if(VALUE_WITHIN(key, 0x59, 0x61)) {
+                 if(kbdLockingKeys.kbdLeds.bmNumLock == 1)
+                         Serial.write(key - 0x59 + '1');
+                         return;
+         } else if(VALUE_WITHIN(key, 0x2d, 0x38)) {
+                 Serial.write((shift) ? (uint8_t)pgm_read_byte(&getSymKeysUp()[key - 0x2d]) : (uint8_t)pgm_read_byte(&getSymKeysLo()[key - 0x2d]));
+                 return;
+         } else if(VALUE_WITHIN(key, 0x54, 0x58)) {
+                 Serial.write((uint8_t)pgm_read_byte(&getPadKeys()[key - 0x54]));
+                 return;
+         } else {
+                 switch(key) {
+                         case UHS_HID_BOOT_KEY_SPACE: Serial.write(0x20); return;
+                         case UHS_HID_BOOT_KEY_ENTER: Serial.write('\r'); return; // Carriage return (0x0D)
+                         case UHS_HID_BOOT_KEY_ZERO2: Serial.write((kbdLockingKeys.kbdLeds.bmNumLock == 1) ? '0': 0); return;
+                         case UHS_HID_BOOT_KEY_PERIOD: Serial.write((kbdLockingKeys.kbdLeds.bmNumLock == 1) ? '.': 0); return;
+                 }
+         }
+         Serial.printf("Unknown key: %d\n",key);
+         return;
+ }
 
 KeyboardInput Prs;
 
@@ -145,7 +172,7 @@ void setup(void) {
 
     gfx->fillScreen(WHITE);
 
-    vt->begin(gfx,gfx->width(),gfx->height(),1,1);   
+    vt->begin(gfx,gfx->width(),gfx->height(),1,1);
 
 // backlight on
 #ifdef GFX_BL
@@ -170,9 +197,11 @@ void serialEvent() {
 }
 
 void loop() {
-//  vTaskDelete(NULL);
+//  vTaskDelete(NULL); // not possible since serialEvent()
 //      if (Serial.available() > 0) { 
 //        c = Serial.read();
 //        vt->write(c);
 //     } 
+  vt->blinkCursor();
 }
+ 
